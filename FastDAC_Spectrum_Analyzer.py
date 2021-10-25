@@ -12,11 +12,11 @@ import dash
 from dash import html
 from dash import dcc
 from dash.dependencies import Input, Output, State
-from dash_extensions import Download
 
 def PSD(port, duration, channels=[0, ]):
 
-    s = serial.Serial(port, 1750000, timeout=1)
+    s = serial.Serial(port, 1750000, timeout=1)        # Fibre optic connection
+    #s = serial.Serial('COM6', 57600, timeout=1)        # USB connection
 
     def Query(command):
 
@@ -42,8 +42,6 @@ def PSD(port, duration, channels=[0, ]):
 
         if read_time not in convert_time:
             convert_time.append(read_time)
-
-    #assert len(convert_time) == 1
 
     c_freq = 1/(convert_time[0]*10**-6)  # Hz
     measure_freq = c_freq/len(channels)
@@ -86,6 +84,9 @@ X = [[],[],[],[]]
 Y = [[],[],[],[]]
 PORT = [0,'COM4']
 DUR = [0,1.5]
+SELAVG = [0, 5]
+SELAX = [0, 'log']
+CHNL = [0, [0]]
 
 app = dash.Dash(__name__, title='FastDAC Spectrum Analyzer', update_title='Loading...')
 #app.scripts.config.serve_locally = True
@@ -110,14 +111,12 @@ app.layout = html.Div([
 
         html.Div([ 
         html.Label(['Port:'], style={'font-weight': 'bold', 'margin-left': '15px','margin-right':'56px'}),
-        dcc.Input(id='enter-port', type='text', value=str(PORT[-1]), style={'width': '40%', 'height':'50%'}),
-        html.Button('OK', id='enter-port-button', n_clicks=0, style={"margin-bottom": "10px"}),
+        dcc.Input(id='enter-port', type='text', value=str(PORT[-1]), style={'width': '40%', 'height':'50%'})
         ], style={'margin-top':'15px'}),
 
         html.Div([
         html.Label(children=['Duration (s): '], style={'font-weight': 'bold', "text-align": "right","offset":0, 'margin-left': '15px'}),
-        dcc.Input(id='enter-duration', type = 'text',value=str(DUR[-1]), style={'width': '40%', "margin-bottom": "10px"}),
-        html.Button('OK', id='enter-duration-button', n_clicks=0),
+        dcc.Input(id='enter-duration', type = 'text',value=str(DUR[-1]), style={'width': '40%', "margin-bottom": "10px"})
         ]),
 
         html.Div([
@@ -155,6 +154,9 @@ app.layout = html.Div([
                 value='log', 
                 style={ "margin-bottom": "15px", 'margin-left': '10px','margin-right': '10px',  'width':'90%'}),
         ]),
+
+        html.Div([html.Button('OK', id='button', n_clicks=0)], 
+        style={'text-align':'center',"margin-bottom": "10px" })
 
         ], style = {'width':'25%',
             'height':'25%',
@@ -211,55 +213,55 @@ app.layout = html.Div([
     Input(component_id='avg-dropdown', component_property='value'),
     Input(component_id='axes-dropdown', component_property='value'),
     Input(component_id='channels-checklist', component_property='value'),
-    Input(component_id='enter-port-button', component_property='n_clicks'),
-    Input(component_id='enter-duration-button', component_property='n_clicks'),
+    Input(component_id='button', component_property='n_clicks'),
     State(component_id='enter-port', component_property='value'),
     State(component_id='enter-duration', component_property='value')]
     )
 
-def update_graph(input_data, selected_avg, selected_axes, channel_arr, n_clicks1, n_clicks2, port, dur):
+def update_graph(input_data, selected_avg, selected_axes, channel_arr, n_clicks, port, dur):
 
     changed_id = [p['prop_id'] for p in dash.callback_context.triggered][0]
 
-    if 'enter-port-button' in changed_id:
+    if 'button' in changed_id:
         PORT.append(port)
-        
-    if 'enter-dur-button' in changed_id:
         DUR.append(dur)
-    
-    psd = PSD(str(PORT[-1]), float(DUR[-1])*2/3, channel_arr)
+        SELAVG.append(selected_avg)
+        SELAX.append(selected_axes)
+        CHNL.append(channel_arr)
+        
+    psd = PSD(str(PORT[-1]), float(DUR[-1])*2/3, CHNL[-1])
 
-    fig = make_subplots(rows=[1,2,2,2][len(channel_arr)-1], cols=[1,1,2,2][len(channel_arr)-1])
+    fig = make_subplots(rows=[1,2,2,2][len(CHNL[-1])-1], cols=[1,1,2,2][len(CHNL[-1])-1])
     fig.update_layout(title_text="FastDAC Spectrum Analyzer", title_x=0.5, legend_title = "channels")
-    fig.update_yaxes(type=selected_axes, title_text='Potential [mV]')
+    fig.update_yaxes(type=SELAX[-1], title_text='Potential [mV]')
     fig.update_xaxes(title_text='Frequency [Hz]')
     fig.update_layout(showlegend=False)
 
-    for k in range(0, len(channel_arr)):
+    for k in range(0, len(CHNL[-1])):
         X[k].append(psd[0][k][0])
         Y[k].append(psd[1][k][0])
         
-        if len(X[k])<selected_avg:
+        if len(X[k])<SELAVG[-1]:
             xnew=np.mean(X[k][-len(X[k]):-1], axis=0)
             ynew=np.mean(Y[k][-len(X[k]):-1], axis=0)
 
-        elif selected_avg==1:
+        elif SELAVG[-1]==1:
             xnew=psd[0][k][0]
             ynew=psd[1][k][0]
             
         else:
-            xnew=np.mean(X[k][-selected_avg:-1], axis=0)
-            ynew=np.mean(Y[k][-selected_avg:-1], axis=0)
+            xnew=np.mean(X[k][-SELAVG[-1]:-1], axis=0)
+            ynew=np.mean(Y[k][-SELAVG[-1]:-1], axis=0)
 
         fig.add_trace(
             go.Scatter(
                 x=xnew[15:], 
                 y=ynew[15:], 
-                name=str(channel_arr[k])), 
+                name=str(CHNL[-1][k])), 
                 row=[1,2,1,2][k],
                 col=[1,1,2,2][k])
 
-    return fig, 1000*float(dur), psd[4], psd[3], psd[2]
+    return fig, 1500*float(dur), psd[4], psd[3], psd[2]
 
 if __name__ == '__main__':
-     app.run_server(host= '0.0.0.0', debug=True)
+     app.run_server(host= '0.0.0.0', debug=False)
